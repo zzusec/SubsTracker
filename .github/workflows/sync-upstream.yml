@@ -1,0 +1,68 @@
+name: Sync Upstream
+
+on:
+  schedule:
+    # Every six hours; GitHub schedules use UTC.
+    - cron: '23 */6 * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: sync-upstream-master
+  cancel-in-progress: false
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: master
+          fetch-depth: 0
+
+      - name: Merge upstream without replacing production configuration
+        id: upstream
+        shell: bash
+        run: |
+          set -euo pipefail
+          git remote add upstream https://github.com/wangwangit/SubsTracker.git
+          git fetch --no-tags upstream master
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          if git merge-base --is-ancestor upstream/master HEAD; then
+            echo 'changed=false' >> "$GITHUB_OUTPUT"
+            echo 'Already includes the latest upstream commit.' >> "$GITHUB_STEP_SUMMARY"
+            # Public repositories lose scheduled workflows after 60 idle days.
+            if (( $(date +%s) - $(git log -1 --format=%ct) >= 30 * 86400 )); then
+              git commit --allow-empty -m 'chore: keep scheduled upstream sync active'
+              git push origin HEAD:master
+              echo 'Created a monthly keepalive commit (no source changes).' >> "$GITHUB_STEP_SUMMARY"
+            fi
+            exit 0
+          fi
+          git merge --no-edit upstream/master
+          echo 'changed=true' >> "$GITHUB_OUTPUT"
+          echo "Upstream: $(git rev-parse upstream/master)" >> "$GITHUB_STEP_SUMMARY"
+
+      - uses: actions/setup-node@v4
+        if: steps.upstream.outputs.changed == 'true'
+        with:
+          node-version: '22'
+          cache: npm
+
+      - name: Validate the update before publishing
+        if: steps.upstream.outputs.changed == 'true'
+        run: |
+          npm ci
+          npm run lint
+          npm test
+          npx wrangler deploy --config wrangler.production.toml --dry-run
+
+      - name: Publish the update to Cloudflare Builds
+        if: steps.upstream.outputs.changed == 'true'
+        run: |
+          git push origin HEAD:master
+          echo 'Published master; Cloudflare Workers Builds handles production deployment.' >> "$GITHUB_STEP_SUMMARY"

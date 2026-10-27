@@ -1,0 +1,26 @@
+name = "substracker"
+account_id = "75710b3f985b2a09e812e5c861251ca8"
+main = "src/index.js"
+compatibility_date = "2025-07-06"
+compatibility_flags = ["nodejs_compat"]
+keep_vars = true
+
+routes = [{ pattern = "subtracker.hx10.com", custom_domain = true }]
+
+[[kv_namespaces]]
+binding = "SUBSCRIPTIONS_KV"
+id = "f3cab601021347d280a0341e485fcdb8"
+
+[assets]
+directory = "./public"
+binding = "ASSETS"
+
+[triggers]
+crons = ["*/12 * * * *"]
+
+[vars]
+ENVIRONMENT = "production"
+
+[observability]
+enabled = true
+head_sampling_rate = 1
