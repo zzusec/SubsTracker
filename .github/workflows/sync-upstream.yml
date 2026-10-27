@@ -125,9 +125,25 @@ jobs:
 
       - name: Verify the deployed site
         if: steps.production.outputs.changed == 'true'
+        shell: bash
         run: |
-          curl --fail --silent --show-error --retry 3 https://subtracker.hx10.com/ -o /tmp/login.html
-          curl --fail --silent --show-error --retry 3 https://subtracker.hx10.com/js/lib/api-client.js -o /tmp/api-client.js
+          set -euo pipefail
+          check_url() {
+            local url="$1" body="$2" status
+            if curl --fail-with-body --silent --show-error --retry 3 --connect-timeout 10 --max-time 60 \
+              --dump-header "$body.headers" "$url" -o "$body"; then
+              return 0
+            else
+              status=$?
+            fi
+            echo "Production HTTP check failed for $url (curl exit $status)."
+            # Keep edge diagnostics visible without logging cookies or page contents.
+            grep -iE '^(HTTP/|server:|cf-ray:|cf-mitigated:|content-type:)' "$body.headers" || true
+            grep -ioE '<title>[^<]*|error code: [0-9]+' "$body" || true
+            return "$status"
+          }
+          check_url https://subtracker.hx10.com/ /tmp/login.html
+          check_url https://subtracker.hx10.com/js/lib/api-client.js /tmp/api-client.js
           grep -q 'loginForm' /tmp/login.html
           grep -q 'fetch' /tmp/api-client.js
           echo 'Production login page and JavaScript asset checks passed.' >> "$GITHUB_STEP_SUMMARY"
