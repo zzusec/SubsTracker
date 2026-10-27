@@ -1,0 +1,54 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>SubsTracker Production Deployment</title>
+  <style>
+    :root { color-scheme: light; }
+    body { max-width: 54rem; margin: 3rem auto; padding: 0 1.25rem; color: #202b32; font: 17px/1.65 Georgia, serif; }
+    h1, h2 { line-height: 1.2; }
+    h2 { margin-top: 2rem; }
+    a { color: #065f65; }
+    code, pre { font: .87em/1.6 monospace; overflow-wrap: anywhere; }
+    pre { padding: 1rem; background: #f1f4f4; white-space: pre-wrap; }
+    li { margin: .4rem 0; }
+    @media print { body { max-width: none; margin: 0; padding: 0; font-size: 11pt; } pre { break-inside: avoid; } }
+  </style>
+</head>
+<body>
+  <h1>Production Deployment</h1>
+  <p>Production: <a href="https://subtracker.hx10.com/admin/dashboard">subtracker.hx10.com/admin/dashboard</a></p>
+  <ul>
+    <li>Upstream: <code>wangwangit/SubsTracker</code>, branch <code>master</code>.</li>
+    <li>Deployment fork: <code>zzusec/SubsTracker</code>, branch <code>master</code>.</li>
+    <li>Worker: <code>substracker</code>.</li>
+    <li>Configuration: <code>wrangler.production.toml</code>. Do not use <code>deploy:safe</code> or <code>setup</code> against production: those commands can select or create a different KV namespace.</li>
+    <li>The existing KV namespace, custom domain, compatibility date, and 12-minute reminder schedule are retained. The six-hour code update schedule is separate from subscription reminders.</li>
+  </ul>
+  <h2>Automatic Updates</h2>
+  <p><code>.github/workflows/sync-upstream.yml</code> runs at <code>23 */6 * * *</code> UTC: approximately 02:23, 08:23, 14:23, and 20:23 Asia/Shanghai. GitHub can delay scheduled runs.</p>
+  <p>The workflow merges upstream application changes, preserves fork-owned workflows and production configuration, runs lint, tests, and a dry run, then publishes and deploys through Wrangler. It does not use Cloudflare Workers Builds. The latter returned account restriction error <code>8000036</code> during setup; the regular Worker deployment API was verified to work.</p>
+  <p>The <code>CLOUDFLARE_API_TOKEN</code> repository secret is required. Use a token scoped to the <code>substracker</code> Worker and the <code>hx10.com</code> route, with Individual Workers Editor and Workers Routes Write permissions. No local OAuth session or GitHub personal token is uploaded to Actions.</p>
+  <p>The deployed <code>SOURCE_COMMIT</code> variable identifies the production Git commit. The <code>production-verified</code> tag moves only after the full deployment and site checks succeed. A run skips deployment only when both markers match its commit; a failed deployment is retried on the next run even when upstream has no additional changes. Application merge conflicts, failed tests, and API errors fail visibly in Actions rather than replacing production with unvalidated code. CI-only merge conflicts retain the fork's CI files.</p>
+  <p>A monthly empty keepalive commit prevents GitHub's 60-day public-repository schedule inactivity disablement. The inherited <code>Deploy</code> workflow is disabled; <code>Sync Upstream</code> owns production updates.</p>
+  <h2>Manual Operation</h2>
+  <p>Check recent runs:</p>
+  <pre>gh run list --repo zzusec/SubsTracker --workflow sync-upstream.yml</pre>
+  <p>Check upstream now:</p>
+  <pre>gh workflow run sync-upstream.yml --repo zzusec/SubsTracker --ref master</pre>
+  <p>Force a fresh validation and deployment, including when upstream is unchanged:</p>
+  <pre>gh workflow run sync-upstream.yml --repo zzusec/SubsTracker --ref master -f redeploy=true</pre>
+  <p>For an authorized local deployment, use the lockfile-pinned dependencies and the production configuration:</p>
+  <pre>npm ci
+npm run lint
+npm test
+npx wrangler deploy --config wrangler.production.toml --dry-run
+npx wrangler deploy --config wrangler.production.toml --keep-vars --var "SOURCE_COMMIT:$(git rev-parse HEAD)"</pre>
+  <h2>Data and Rollback</h2>
+  <p>Before the initial upgrade on 2026-10-27, the old Worker, its settings and schedules, and every KV value were saved under the owner's private local state directory <code>~/.local/state/subtracker/backups/20261027-230124/</code>. This directory contains credentials and subscription data; never commit or upload it to a public artifact.</p>
+  <p>The v3 migration replaces the old <code>subscriptions</code> array with <code>sub:{id}</code> records and <code>sub_index</code>. Its temporary <code>subscriptions_v2_backup</code> expires after seven days. Four production subscriptions, every original field, the config bytes, and four reminder rules were independently verified after migration.</p>
+  <p>Rolling back Worker code does not roll back KV data. Returning to the pre-v3 Worker also requires restoring the old subscription representation from the private backup. Review any post-upgrade edits before restoring data; do not blindly overwrite current records.</p>
+  <p>Future code updates do not automatically create offline KV snapshots. Back up data before any future schema migration. A successful deployment or HTTP 200 alone does not prove data integrity: verify authenticated version, subscription records, dashboard statistics, and required static assets.</p>
+</body>
+</html>
