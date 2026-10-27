@@ -54,7 +54,17 @@ jobs:
           if git merge-base --is-ancestor upstream/master HEAD; then
             git commit --allow-empty -m 'chore: verify automated production deployment'
           else
-            git merge --no-edit upstream/master
+            if ! git merge --no-commit --no-ff upstream/master; then
+              # Only CI-file conflicts are safe to resolve by keeping our CI.
+              if [[ ! -f "$(git rev-parse --git-path MERGE_HEAD)" ]] ||
+                 [[ -n "$(git diff --name-only --diff-filter=U -- . ':!.github/workflows/**')" ]]; then
+                echo 'Upstream merge failed; no update was published.' >> "$GITHUB_STEP_SUMMARY"
+                exit 1
+              fi
+            fi
+            # Keep fork-owned CI; GITHUB_TOKEN cannot publish workflow changes.
+            git restore --source=HEAD --staged --worktree -- .github/workflows
+            git commit --no-edit
           fi
           echo 'changed=true' >> "$GITHUB_OUTPUT"
           echo "Upstream: $(git rev-parse upstream/master)" >> "$GITHUB_STEP_SUMMARY"
