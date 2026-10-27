@@ -5,6 +5,12 @@ on:
     # Every six hours; GitHub schedules use UTC.
     - cron: '23 */6 * * *'
   workflow_dispatch:
+    inputs:
+      redeploy:
+        description: Validate and redeploy even when upstream is unchanged
+        required: false
+        default: false
+        type: boolean
 
 permissions:
   contents: write
@@ -26,13 +32,15 @@ jobs:
       - name: Merge upstream without replacing production configuration
         id: upstream
         shell: bash
+        env:
+          FORCE_REDEPLOY: ${{ inputs.redeploy || false }}
         run: |
           set -euo pipefail
           git remote add upstream https://github.com/wangwangit/SubsTracker.git
           git fetch --no-tags upstream master
           git config user.name 'github-actions[bot]'
           git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
-          if git merge-base --is-ancestor upstream/master HEAD; then
+          if git merge-base --is-ancestor upstream/master HEAD && [[ "$FORCE_REDEPLOY" != 'true' ]]; then
             echo 'changed=false' >> "$GITHUB_OUTPUT"
             echo 'Already includes the latest upstream commit.' >> "$GITHUB_STEP_SUMMARY"
             # Public repositories lose scheduled workflows after 60 idle days.
@@ -43,7 +51,11 @@ jobs:
             fi
             exit 0
           fi
-          git merge --no-edit upstream/master
+          if git merge-base --is-ancestor upstream/master HEAD; then
+            git commit --allow-empty -m 'chore: verify automated production deployment'
+          else
+            git merge --no-edit upstream/master
+          fi
           echo 'changed=true' >> "$GITHUB_OUTPUT"
           echo "Upstream: $(git rev-parse upstream/master)" >> "$GITHUB_STEP_SUMMARY"
 
