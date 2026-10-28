@@ -20,6 +20,8 @@ The deployed `SOURCE_COMMIT` variable identifies the production Git commit. The 
 
 A monthly empty keepalive commit prevents GitHub's 60-day public-repository schedule inactivity disablement. The inherited `Deploy` workflow is disabled; `Sync Upstream` owns production updates.
 
+On 2026-10-28, Bot Fight Mode was disabled for the `hx10.com` zone at the owner's request because it challenged GitHub Actions' production HTTP checks. This is a zone-wide setting, not a per-subdomain exception. Other Cloudflare security settings and application authentication were left unchanged; no `workers.dev` or preview endpoint was enabled. Re-enabling Bot Fight Mode may block CI checks again.
+
 ## Manual Operation
 
 Check recent runs:
